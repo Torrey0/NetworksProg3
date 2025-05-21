@@ -1,0 +1,9 @@
+{
+    "files.associations": {
+        ".fantomasignore": "ignore",
+        "checksum.h": "c",
+        "polllib.h": "c",
+        "safeutil.h": "c",
+        "networks.h": "c"
+    }
+}
