@@ -33,13 +33,16 @@ typedef struct header Header;
 
 struct header{
     uint32_t seq_num;
-    uint32_t checksum;
-    uint32_t flag;
+    uint16_t checksum;
+    uint8_t flag;
 };
 
 enum FLAG{
-    DATA=3, ACK=5, FNAME=7, FNAME_OK=8, FNAME_BAD=9, END_OF_FILE=10, EOF_ACK=11, CRC_ERROR=-1
+    DATA=3, ACK=5, SREJ=6, FNAME=8, FNAME_RESP=9, END_OF_FILE=10, EOF_ACK=11, CRC_ERROR=-1
 };
+//data to be placed in FNAME_RESP packets to indicate status
+#define FNAME_OK 9
+#define FNAME_BAD 10
 
 int32_t send_buf(uint8_t* buf, uint32_t len, Connection* connection, uint8_t flag, uint32_t seq_num, uint8_t* packet);
 

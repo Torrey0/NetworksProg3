@@ -19,6 +19,7 @@
 #include "pollLib.h"
 #include "networks.h"
 #include "cpe464.h"
+#include "clientSlidingWindow.h"
 
 #include "srej.h"
 
@@ -30,9 +31,9 @@ enum State{
 
 
 void processFile(char* argv[]);
-STATE start_state(char** argv, Connection* server, uint32_t* clientSeqNum);
+STATE start_state(char** argv, Connection* server, uint32_t* clientSeqNum, slidingWindow** window);
 STATE filename(char* fname, int32_t buf_size, Connection* server);
-STATE recv_data(int32_t output_file, Connection* server, uint32_t* clientSeqNum);
+STATE recv_data(int32_t output_file, Connection* server, uint32_t* clientSeqNum, slidingWindow* window);
 STATE file_ok(int* outputFileFd, char* outputFileName);
 void check_args(int argc, char** argv);
 
@@ -51,6 +52,7 @@ int main (int argc, char *argv[])
 void processFile(char* argv[]){
 	//argv needed to get file names, server name and server port number
 	Connection* server=(Connection*) calloc(1,sizeof(Connection));
+	slidingWindow* window=NULL;	//will be set in processFile
 	uint32_t clientSeqNum=0;
 	int32_t output_file_fd=0;
 	STATE state = START_STATE;
@@ -58,7 +60,7 @@ void processFile(char* argv[]){
 	while(state!= DONE){
 		switch(state){
 			case START_STATE:
-				state = start_state(argv, server, &clientSeqNum);
+				state = start_state(argv, server, &clientSeqNum, &window);
 				break;
 
 			case FILENAME:
@@ -70,7 +72,7 @@ void processFile(char* argv[]){
 				break;
 			
 			case RECV_DATA:
-				state=recv_data(output_file_fd, server, &clientSeqNum);
+				state=recv_data(output_file_fd, server, &clientSeqNum, window);
 				break;
 			
 			case DONE:
@@ -83,9 +85,9 @@ void processFile(char* argv[]){
 	}
 }
 
-STATE start_state(char** argv, Connection* server, uint32_t* clientSeqNum){
+STATE start_state(char** argv, Connection* server, uint32_t* clientSeqNum, slidingWindow** window){
 	//Returns FILENAME if no error, otherwise DONE (did 10+ connects & cannot connect to server)
-	uint8_t packet[MAX_LEN];
+	uint8_t packet[MAX_LEN + sizeof(Header)];
 	uint8_t buf[MAX_LEN];
 	int fileNameLen=strlen(argv[1]);
 	STATE returnValue = FILENAME;
@@ -93,7 +95,12 @@ STATE start_state(char** argv, Connection* server, uint32_t* clientSeqNum){
 	// printf("in start state\n");
 	//if we have previously connected to server (but failed), close it before new reconnect attempts
 	if(server->sk_num>0){
+		printf("closing old server\n");
+		removeFromPollSet(server->sk_num);
 		close(server->sk_num);
+	}else{
+		printf("pollSetInit\n");
+		setupPollSet();
 	}
 
 	if(udpClientSetup(argv[5], atoi(argv[6]), server) <0){
@@ -101,15 +108,22 @@ STATE start_state(char** argv, Connection* server, uint32_t* clientSeqNum){
 		printf("couldnt connect to server\n");
 		returnValue=DONE;
 	}else{
+		int32_t windowSize=5;	//for now, just use hardocded value on client, can do input later.
 		//put in buffer size (for sending data) and filename
 		bufferSize=htonl(atoi(argv[3]));
-		memcpy(buf, &bufferSize, SIZE_OF_BUF_SIZE);
-		memcpy(&buf[SIZE_OF_BUF_SIZE], argv[1], fileNameLen);
+		*window=clientWindowInit(windowSize,atoi(argv[3]), START_SEQ_NUM);
+
+		windowSize = htonl(windowSize);
+		memcpy(buf, &bufferSize, SIZE_OF_BUF_SIZE);				//claim bufferSize
+		memcpy(buf+SIZE_OF_BUF_SIZE, &windowSize,sizeof(int32_t));
+		memcpy(&buf[SIZE_OF_BUF_SIZE + sizeof(int32_t)], argv[1], fileNameLen);	//claim fileName
 		printIPv6Info(&server->remote);
 
+		addToPollSet(server->sk_num);	//add the client to our poll set
 
 
-		send_buf(buf, fileNameLen + SIZE_OF_BUF_SIZE, server, FNAME, *clientSeqNum, packet);
+
+		send_buf(buf, fileNameLen + SIZE_OF_BUF_SIZE+sizeof(int32_t), server, FNAME, *clientSeqNum, packet);
 		(*clientSeqNum)++;
 
 		returnValue=FILENAME;
@@ -125,7 +139,7 @@ STATE filename(char* fname, int32_t buf_size, Connection* server){
 	//return START_STATE if no reply from server, DONE if bad filename, FILE_OK if good to go :)
 	
 	int returnValue=START_STATE;
-	uint8_t packet[MAX_LEN];
+	uint8_t packet[MAX_LEN + sizeof(Header)];
 	uint8_t flag=0;
 	uint32_t seq_num=0;
 	int32_t recv_check=0;
@@ -162,43 +176,67 @@ STATE file_ok(int* outputFileFd, char* outputFileName){
 	return returnValue;
 }
 
-STATE recv_data(int32_t output_file, Connection* server, uint32_t* clientSeqNum){
+STATE recv_data(int32_t output_file, Connection* server, uint32_t* clientSeqNum, slidingWindow* window){
 	uint32_t seq_num=0;
-	uint32_t ackSeqNum=0;
+	// uint32_t ackSeqNum=0;
 	uint8_t flag=0;
 	int32_t data_len=0;
 	uint8_t data_buf[MAX_LEN];
-	uint8_t packet[MAX_LEN];
-	static int32_t expected_seq_num = START_SEQ_NUM;
-
-	if(select_call(server->sk_num, LONG_TIME) == 0){
+	// uint8_t packet[MAX_LEN];
+	printf("entering recv state\n\n!\n");
+	if(pollCall(LONG_TIME * 1000) == 0){
 		printf("Timeout after 10 seconds, server must be gone.\n");
 		return DONE;
 	}
-
-	data_len = recv_buf(data_buf, MAX_LEN, server->sk_num, server, &flag, &seq_num);
-
-	if(data_len == CRC_ERROR){	//ignore if CRC is wrong
-		return RECV_DATA;
+	while ( (windowRecvData(window, data_buf, &data_len, MAX_LEN, server->sk_num, server, &flag, &seq_num)) ==moreMSGs){	//while the 
+		if(flag==END_OF_FILE){
+			printf("File done\n");
+			close(output_file);
+			return DONE;
+		} else{
+			// //send ACK
+			// ackSeqNum=htonl(seq_num);
+			// send_buf((uint8_t*) &ackSeqNum, sizeof(ackSeqNum), server, ACK, *clientSeqNum, packet);
+			// (*clientSeqNum)++;
+			// //write to the file
+			printf("writting to file\n");
+			write(output_file, data_buf, data_len);	//somehow &data_buf worked earlier i think? try for now without
+		}
 	}
+			if(flag==END_OF_FILE){
+			printf("File done\n");
+			close(output_file);
+			return DONE;
+		} else{
+			// //send ACK
+			// ackSeqNum=htonl(seq_num);
+			// send_buf((uint8_t*) &ackSeqNum, sizeof(ackSeqNum), server, ACK, *clientSeqNum, packet);
+			// (*clientSeqNum)++;
+			// //write to the file
+			printf("writting to file\n");
+			write(output_file, data_buf, data_len);	//somehow &data_buf worked earlier i think? try for now without
+		}
+	
+	// if(data_len == CRC_ERROR){	//ignore if CRC is wrong
+	// 	return RECV_DATA;
+	// }
+	// if(flag==END_OF_FILE){
+	// 	//send ACK
+	// 	send_buf(packet, 1, server, EOF_ACK, *clientSeqNum, packet);
+	// 	(*clientSeqNum)++;
+	// 	printf("File done\n");
+	// 	return DONE;
+	// } else{
+	// 	//send ACK
+	// 	ackSeqNum=htonl(seq_num);
+	// 	send_buf((uint8_t*) &ackSeqNum, sizeof(ackSeqNum), server, ACK, *clientSeqNum, packet);
+	// 	(*clientSeqNum)++;
+	// }
 
-	if(flag==END_OF_FILE){
-		//send ACK
-		send_buf(packet, 1, server, EOF_ACK, *clientSeqNum, packet);
-		(*clientSeqNum)++;
-		printf("File done\n");
-		return DONE;
-	} else{
-		//send ACK
-		ackSeqNum=htonl(seq_num);
-		send_buf((uint8_t*) &ackSeqNum, sizeof(ackSeqNum), server, ACK, *clientSeqNum, packet);
-		(*clientSeqNum)++;
-	}
-
-	if(seq_num == expected_seq_num){
-		expected_seq_num++;
-		write(output_file, &data_buf, data_len);
-	}
+	// if(seq_num == expected_seq_num){
+	// 	expected_seq_num++;
+	// 	write(output_file, &data_buf, data_len);
+	// }
 
 	return RECV_DATA;
 }

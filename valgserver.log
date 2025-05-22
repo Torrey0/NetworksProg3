@@ -1,0 +1,92 @@
+==92090== Memcheck, a memory error detector
+==92090== Copyright (C) 2002-2022, and GNU GPL'd, by Julian Seward et al.
+==92090== Using Valgrind-3.22.0 and LibVEX; rerun with -h for copyright info
+==92090== Command: ./server 0 10001
+==92090== Parent PID: 79962
+==92090== 
+==92090== Syscall param socketcall.getsockname(namelen_in) points to uninitialised byte(s)
+==92090==    at 0x4C4AA3B: getsockname (syscall-template.S:120)
+==92090==    by 0x10D525: bindMod (network-hooks.c:121)
+==92090==    by 0x10B77C: udpServerSetup (networks.c:68)
+==92090==    by 0x10AA36: main (server.c:49)
+==92090==  Address 0x1ffefff33c is on thread 1's stack
+==92090==  in frame #1, created by bindMod (network-hooks.c:82)
+==92090== 
+==92090== Syscall param socketcall.getsockname(namelen_out) points to uninitialised byte(s)
+==92090==    at 0x4C4AA3B: getsockname (syscall-template.S:120)
+==92090==    by 0x10D525: bindMod (network-hooks.c:121)
+==92090==    by 0x10B77C: udpServerSetup (networks.c:68)
+==92090==    by 0x10AA36: main (server.c:49)
+==92090==  Address 0x1ffefff33c is on thread 1's stack
+==92090==  in frame #1, created by bindMod (network-hooks.c:82)
+==92090== 
+==92108== Syscall param openat(filename) points to uninitialised byte(s)
+==92108==    at 0x4C3A175: open (open64.c:41)
+==92108==    by 0x10AEFC: filename (server.c:160)
+==92108==    by 0x10AC8D: process_client (server.c:109)
+==92108==    by 0x10AB86: process_server (server.c:83)
+==92108==    by 0x10AA43: main (server.c:51)
+==92108==  Address 0x1ffeffe2bf is on thread 1's stack
+==92108==  in frame #1, created by filename (server.c:137)
+==92108== 
+==92108== 
+==92108== HEAP SUMMARY:
+==92108==     in use at exit: 2,220 bytes in 10 blocks
+==92108==   total heap usage: 550 allocs, 540 frees, 106,504 bytes allocated
+==92108== 
+==92108== 20 bytes in 1 blocks are indirectly lost in loss record 1 of 6
+==92108==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==92108==    by 0x10CE45: serverWindowInit (serverSlidingWindow.c:13)
+==92108==    by 0x10AEAC: filename (server.c:153)
+==92108==    by 0x10AC8D: process_client (server.c:109)
+==92108==    by 0x10AB86: process_server (server.c:83)
+==92108==    by 0x10AA43: main (server.c:51)
+==92108== 
+==92108== 36 bytes in 1 blocks are still reachable in loss record 2 of 6
+==92108==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==92108==    by 0x10AAA2: process_server (server.c:62)
+==92108==    by 0x10AA43: main (server.c:51)
+==92108== 
+==92108== 40 bytes in 1 blocks are indirectly lost in loss record 3 of 6
+==92108==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==92108==    by 0x10CE28: serverWindowInit (serverSlidingWindow.c:12)
+==92108==    by 0x10AEAC: filename (server.c:153)
+==92108==    by 0x10AC8D: process_client (server.c:109)
+==92108==    by 0x10AB86: process_server (server.c:83)
+==92108==    by 0x10AA43: main (server.c:51)
+==92108== 
+==92108== 80 bytes in 1 blocks are still reachable in loss record 4 of 6
+==92108==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==92108==    by 0x10C5EE: sCalloc (safeUtil.c:35)
+==92108==    by 0x10C2F1: setupPollSet (pollLib.c:32)
+==92108==    by 0x10AED3: filename (server.c:157)
+==92108==    by 0x10AC8D: process_client (server.c:109)
+==92108==    by 0x10AB86: process_server (server.c:83)
+==92108==    by 0x10AA43: main (server.c:51)
+==92108== 
+==92108== 2,000 bytes in 5 blocks are indirectly lost in loss record 5 of 6
+==92108==    at 0x484D953: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==92108==    by 0x10CE81: serverWindowInit (serverSlidingWindow.c:15)
+==92108==    by 0x10AEAC: filename (server.c:153)
+==92108==    by 0x10AC8D: process_client (server.c:109)
+==92108==    by 0x10AB86: process_server (server.c:83)
+==92108==    by 0x10AA43: main (server.c:51)
+==92108== 
+==92108== 2,104 (44 direct, 2,060 indirect) bytes in 1 blocks are definitely lost in loss record 6 of 6
+==92108==    at 0x4846828: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==92108==    by 0x10CE12: serverWindowInit (serverSlidingWindow.c:11)
+==92108==    by 0x10AEAC: filename (server.c:153)
+==92108==    by 0x10AC8D: process_client (server.c:109)
+==92108==    by 0x10AB86: process_server (server.c:83)
+==92108==    by 0x10AA43: main (server.c:51)
+==92108== 
+==92108== LEAK SUMMARY:
+==92108==    definitely lost: 44 bytes in 1 blocks
+==92108==    indirectly lost: 2,060 bytes in 7 blocks
+==92108==      possibly lost: 0 bytes in 0 blocks
+==92108==    still reachable: 116 bytes in 2 blocks
+==92108==         suppressed: 0 bytes in 0 blocks
+==92108== 
+==92108== Use --track-origins=yes to see where uninitialised values come from
+==92108== For lists of detected and suppressed errors, rerun with: -s
+==92108== ERROR SUMMARY: 4 errors from 4 contexts (suppressed: 0 from 0)

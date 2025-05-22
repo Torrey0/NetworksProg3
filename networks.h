@@ -16,6 +16,8 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 
+// #include "slidingWindow.h"
+
 #define BACKLOG 10
 
 typedef struct connection Connection;
@@ -24,6 +26,7 @@ struct connection{
     int32_t sk_num;
     struct sockaddr_in6 remote;
     uint32_t len;
+    // slidingWindow* window;
 };
 
 int safeGetUdpSocket();

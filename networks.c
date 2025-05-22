@@ -53,8 +53,9 @@ int safeRecvfrom(int recv_sk_num, uint8_t* packet, int len, Connection* from){
 
 int udpServerSetup(int portNumber){
 	struct sockaddr_in6 server;
+	memset(&server, 0, sizeof(server));
 	int socketNumber = 0;
-	int serverAddrLen = 0;
+	socklen_t serverAddrLen = 0;
 
 	//create socket
 	socketNumber=safeGetUdpSocket();
@@ -89,12 +90,8 @@ int udpClientSetup(char* hostName, int portNumber, Connection* connection){
 		printf("Host not found: %s\n", hostName);
 		return -1;
 	}
-	//add them to the poll set
-	setupPollSet();	//setup poll set
-	
-	addToPollSet(connection->sk_num);
 
-	printf("Server info - ");
+	printf("Server info - \n");
 	printIPv6Info(&connection->remote);
 	return 0;
 }

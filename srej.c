@@ -47,9 +47,9 @@ int createHeader(uint32_t len, uint8_t flag, uint32_t seq_num, uint8_t* packet){
 
     return len+ sizeof(Header);
 }
-
+ //return -1 for crc error, or dataLen=0 if no data, otherwise length of data
 int32_t recv_buf(uint8_t* buf, int32_t len, int32_t recv_sk_num, Connection* connection, uint8_t* flag, uint32_t* seq_num){
-    uint8_t data_buf[MAX_LEN];
+    uint8_t data_buf[MAX_LEN + sizeof(Header)];
     int32_t recv_len=0;
     int32_t dataLen=0;
 
