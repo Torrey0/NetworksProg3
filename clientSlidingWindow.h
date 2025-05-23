@@ -17,7 +17,7 @@ typedef struct sWindow slidingWindow;
 //window is essentially just a circular array buffer. buffer will have O(n) lookup for mathcing sq
 struct sWindow{
     uint32_t expectedSeqNum;  //our current highest RR, anything larger than this goes straight to the buffer
-
+    
     uint64_t startingIndex; //current bounds for circular array (msgBuffers)
     uint64_t highestIndex;
     windowMSG* msgBuffers;

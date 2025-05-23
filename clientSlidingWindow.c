@@ -51,6 +51,7 @@ void sendSREJs(slidingWindow* window, Connection* connection, uint32_t recvSeq_n
     uint32_t lastIndex = (window->highestIndex + window->windowSize - 1) % window->windowSize;
     uint32_t prevHighestSeq = window->msgBuffers[lastIndex].seq_num;
 
+    printf("Sending SREJ: last Index: %d, prevHighestSeq: %d\n", lastIndex, prevHighestSeq);
     // Send SREJs for all sequence numbers between curSeq and recvSeq_num (exclusive)
     for (uint32_t srej_seq = prevHighestSeq + 1; uint_ltMod(srej_seq, recvSeq_num); srej_seq++) {
         // Create and send SREJ packet

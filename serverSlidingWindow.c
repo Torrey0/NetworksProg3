@@ -56,7 +56,7 @@ int receiveACK(slidingWindow* window, uint8_t* buf, int32_t len){
         return 0;
 }
 
-int receiveSREJ(slidingWindow* window, uint8_t* buf, int32_t len, Connection* connection){
+int receiveSREJ(slidingWindow* window, uint8_t* buf, int32_t len, Connection* connection, uint32_t* seq_num){
     uint8_t sendingPacketBuffer[MAX_LEN + sizeof(Header)];
 
     
@@ -78,6 +78,7 @@ int receiveSREJ(slidingWindow* window, uint8_t* buf, int32_t len, Connection* co
 
     //resend the missing packet
     send_buf(window->windowBuffer[rejectedIndex],window->windowBufferSizes[rejectedIndex] ,connection, DATA, rejected_seqNum, sendingPacketBuffer);
+    (*seq_num)++;
     return 0;
     
 }
@@ -96,7 +97,7 @@ int windowRecieve(slidingWindow* window, uint8_t* buf, int32_t len, int32_t sk_n
         return receiveACK(window, buf, dataLen);
     } else if(*flag == SREJ){
         printf("recv SREJ\n");
-        return receiveSREJ(window, buf, dataLen, connection);
+        return receiveSREJ(window, buf, dataLen, connection, seq_num);
     }else{
         printf("Error: windowRecieve unrecognized flag\n");
         return CRC_ERROR; //ignore non ACK or SREJ msgs.
