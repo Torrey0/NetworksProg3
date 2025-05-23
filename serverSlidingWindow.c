@@ -23,6 +23,14 @@ slidingWindow* serverWindowInit(int windowSize, int bufferSize, int startingSeqN
     return window;
 }
 
+//sendRR for the current expectedSeqNum
+void windowSendLowest(slidingWindow* window, Connection* connection, uint8_t* sendingPacketBuffer){
+    int32_t lowestIndex=window->lower % window->windowSize;
+
+    //resend the missing packet
+    send_buf(window->windowBuffer[lowestIndex],window->windowBufferSizes[lowestIndex] ,connection, RESENT_TIMEOUT, window->lower, sendingPacketBuffer);
+}
+
 //returns false if current==upper, true otherwise
 int windowOpen(slidingWindow* window){
     return window->current != window->upper;
@@ -77,7 +85,7 @@ int receiveSREJ(slidingWindow* window, uint8_t* buf, int32_t len, Connection* co
     int32_t rejectedIndex=rejected_seqNum % window->windowSize;
 
     //resend the missing packet
-    send_buf(window->windowBuffer[rejectedIndex],window->windowBufferSizes[rejectedIndex] ,connection, DATA, rejected_seqNum, sendingPacketBuffer);
+    send_buf(window->windowBuffer[rejectedIndex],window->windowBufferSizes[rejectedIndex] ,connection, RESENT_SREJ, rejected_seqNum, sendingPacketBuffer);
     (*seq_num)++;
     return 0;
     
@@ -91,8 +99,10 @@ int windowRecieve(slidingWindow* window, uint8_t* buf, int32_t len, int32_t sk_n
         printf("CRC error\n");
         return CRC_ERROR;
     }
-
-    if(*flag==EOF_ACK || *flag== ACK ){
+    if(*flag==EOF_ACK){ //flag indicates we reached EOF
+        return 0;
+    }
+    if(*flag== ACK ){
         printf("recv ACK\n");
         return receiveACK(window, buf, dataLen);
     } else if(*flag == SREJ){

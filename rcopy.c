@@ -150,16 +150,17 @@ STATE filename(char* fname, int32_t buf_size, Connection* server){
 		
 		//check for errors
 		if(recv_check == CRC_ERROR){
-			returnValue=START_STATE;
-			printf("no server resp\n");
+			returnValue=FILENAME;
+			printf("ignoring CRC error\n");
 		}else if (flag==FNAME_BAD){
 			printf("File %s not found\n", fname);
 			returnValue = DONE;
-		}else if(flag==DATA){
-			returnValue=FILE_OK;	//were getting data b4 anticipated, just role with it :)
+		}else if(isData(flag)){
+			printf("server send  data instead of filename. this may happen if the filename gets lost. will retry again\n");
+			returnValue=START_STATE;	//were getting data b4 anticipated. The server likely dropped its FNAME_OK. just role with it :)
 		}
 	}
-
+	printf("informed that file ok\n");
 	return returnValue;
 }
 
@@ -184,60 +185,30 @@ STATE recv_data(int32_t output_file, Connection* server, uint32_t* clientSeqNum,
 	uint8_t data_buf[MAX_LEN];
 	// uint8_t packet[MAX_LEN];
 	printf("entering recv state\n\n!\n");
-	if(pollCall(LONG_TIME * 1000) == 0){
+	if(pollCall(LONG_TIME * 1000) == -1){
 		printf("Timeout after 10 seconds, server must be gone.\n");
 		return DONE;
 	}
-	while ( (windowRecvData(window, data_buf, &data_len, MAX_LEN, server->sk_num, server, &flag, &seq_num)) ==moreMSGs){	//while the 
+	uint8_t messageStatus=moreMSGs;
+	while ( messageStatus==moreMSGs){	//while the 
+		messageStatus=windowRecvData(window, data_buf, &data_len, MAX_LEN, server->sk_num, server, &flag, &seq_num);
 		if(flag==END_OF_FILE){
 			printf("File done\n");
 			close(output_file);
 			return DONE;
-		} else{
-			// //send ACK
-			// ackSeqNum=htonl(seq_num);
-			// send_buf((uint8_t*) &ackSeqNum, sizeof(ackSeqNum), server, ACK, *clientSeqNum, packet);
-			// (*clientSeqNum)++;
-			// //write to the file
+		} else if(data_len>0){
 			printf("writting to file\n");
 			write(output_file, data_buf, data_len);	//somehow &data_buf worked earlier i think? try for now without
 		}
 	}
-			if(flag==END_OF_FILE){
-			printf("File done\n");
-			close(output_file);
-			return DONE;
-		} else{
-			// //send ACK
-			// ackSeqNum=htonl(seq_num);
-			// send_buf((uint8_t*) &ackSeqNum, sizeof(ackSeqNum), server, ACK, *clientSeqNum, packet);
-			// (*clientSeqNum)++;
-			// //write to the file
-			printf("writting to file\n");
-			write(output_file, data_buf, data_len);	//somehow &data_buf worked earlier i think? try for now without
-		}
-	
-	// if(data_len == CRC_ERROR){	//ignore if CRC is wrong
-	// 	return RECV_DATA;
-	// }
-	// if(flag==END_OF_FILE){
-	// 	//send ACK
-	// 	send_buf(packet, 1, server, EOF_ACK, *clientSeqNum, packet);
-	// 	(*clientSeqNum)++;
-	// 	printf("File done\n");
-	// 	return DONE;
-	// } else{
-	// 	//send ACK
-	// 	ackSeqNum=htonl(seq_num);
-	// 	send_buf((uint8_t*) &ackSeqNum, sizeof(ackSeqNum), server, ACK, *clientSeqNum, packet);
-	// 	(*clientSeqNum)++;
-	// }
-
-	// if(seq_num == expected_seq_num){
-	// 	expected_seq_num++;
-	// 	write(output_file, &data_buf, data_len);
-	// }
-
+		// if(flag==END_OF_FILE){
+		// 	printf("File done\n");
+		// 	close(output_file);
+		// 	return DONE;
+		// } else{ if(data_len>0)
+		// 	printf("writting to file\n");
+		// 	write(output_file, data_buf, data_len);	//somehow &data_buf worked earlier i think? try for now without
+		// }
 	return RECV_DATA;
 }
 

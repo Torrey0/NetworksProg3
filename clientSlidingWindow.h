@@ -17,9 +17,11 @@ typedef struct sWindow slidingWindow;
 //window is essentially just a circular array buffer. buffer will have O(n) lookup for mathcing sq
 struct sWindow{
     uint32_t expectedSeqNum;  //our current highest RR, anything larger than this goes straight to the buffer
-    
-    uint64_t startingIndex; //current bounds for circular array (msgBuffers)
-    uint64_t highestIndex;
+     uint32_t highestUnReadSeqNum; //the seq num the user has read is not necessarily caught up with what the buffer is expecting, it may fall behind if multiple msgs become readable when a new one arrives that was causing a hold-up
+
+    uint32_t highestSeqRecv;
+    // uint64_t startingIndex; //current bounds for circular array (msgBuffers)
+    // uint64_t highestIndex;
     windowMSG* msgBuffers;
     int windowSize; //windowSize=length of the msgBuffer
 
@@ -30,6 +32,7 @@ struct windowMessage{
     uint8_t* windowBuffer;     //array of length windowSize. Containing buffers of size bufferSize
     int32_t windowBufferSize; //how may bytes of data each windowBuffer contains
     uint32_t seq_num;   //when we recieve an old sequence number, use this to find it
+    int8_t valid;
 };
 
 //initializes values, returns a window to be passed back to these Functions later

@@ -19,6 +19,10 @@
 #include "srej.h"
 #include "checksum.h"
 
+int8_t isData(uint8_t flag){
+    return flag==DATA || flag==RESENT_SREJ || flag==RESENT_TIMEOUT;
+}
+
 int32_t send_buf(uint8_t* buf, uint32_t len, Connection* connection, uint8_t flag, uint32_t seq_num, uint8_t* packet){
     int32_t sentLen=0;
     int32_t sendingLen=0;
