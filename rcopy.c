@@ -20,7 +20,7 @@
 #include "networks.h"
 #include "cpe464.h"
 #include "clientSlidingWindow.h"
-
+#include "safeUtil.h"
 #include "srej.h"
 
 
@@ -43,7 +43,7 @@ int main (int argc, char *argv[])
  {
 	check_args(argc, argv);
 
-	sendtoErr_init(atof(argv[4]), DROP_ON, FLIP_ON, DEBUG_ON, RSEED_ON);
+	sendtoErr_init(atof(argv[5]), DROP_ON, FLIP_ON, DEBUG_ON, RSEED_ON);
 
 	processFile(argv);
 	return 0;
@@ -51,7 +51,7 @@ int main (int argc, char *argv[])
 
 void processFile(char* argv[]){
 	//argv needed to get file names, server name and server port number
-	Connection* server=(Connection*) calloc(1,sizeof(Connection));
+	Connection* server=(Connection*) sCalloc(1,sizeof(Connection));
 	slidingWindow* window=NULL;	//will be set in processFile
 	uint32_t clientSeqNum=0;
 	int32_t output_file_fd=0;
@@ -64,7 +64,7 @@ void processFile(char* argv[]){
 				break;
 
 			case FILENAME:
-				state=filename(argv[1], atoi(argv[3]), server);
+				state=filename(argv[1], atoi(argv[4]), server);
 				break;
 			
 			case FILE_OK:
@@ -92,26 +92,22 @@ STATE start_state(char** argv, Connection* server, uint32_t* clientSeqNum, slidi
 	int fileNameLen=strlen(argv[1]);
 	STATE returnValue = FILENAME;
 	uint32_t bufferSize=0;
-	// printf("in start state\n");
-	//if we have previously connected to server (but failed), close it before new reconnect attempts
 	if(server->sk_num>0){
-		printf("closing old server\n");
 		removeFromPollSet(server->sk_num);
 		close(server->sk_num);
 	}else{
-		printf("pollSetInit\n");
 		setupPollSet();
 	}
 
-	if(udpClientSetup(argv[5], atoi(argv[6]), server) <0){
+	if(udpClientSetup(argv[6], atoi(argv[7]), server) <0){
 		//couldn't connect to sevrer
 		printf("couldnt connect to server\n");
 		returnValue=DONE;
 	}else{
-		int32_t windowSize=5;	//for now, just use hardocded value on client, can do input later.
+		int32_t windowSize=atoi(argv[3]);	//for now, just use hardocded value on client, can do input later.
 		//put in buffer size (for sending data) and filename
-		bufferSize=htonl(atoi(argv[3]));
-		*window=clientWindowInit(windowSize,atoi(argv[3]), START_SEQ_NUM);
+		bufferSize=htonl(atoi(argv[4]));
+		*window=clientWindowInit(windowSize,atoi(argv[4]), START_SEQ_NUM);
 
 		windowSize = htonl(windowSize);
 		memcpy(buf, &bufferSize, SIZE_OF_BUF_SIZE);				//claim bufferSize
@@ -124,7 +120,6 @@ STATE start_state(char** argv, Connection* server, uint32_t* clientSeqNum, slidi
 
 
 		send_buf(buf, fileNameLen + SIZE_OF_BUF_SIZE+sizeof(int32_t), server, FNAME, *clientSeqNum, packet);
-		(*clientSeqNum)++;
 
 		returnValue=FILENAME;
 	}
@@ -146,21 +141,24 @@ STATE filename(char* fname, int32_t buf_size, Connection* server){
 	static int retryCount=0;
 
 	if((returnValue = processSelect(server, &retryCount, START_STATE, FILE_OK, DONE)) == FILE_OK){
-		recv_check = recv_buf(packet, MAX_LEN, server->sk_num, server, &flag, &seq_num);
+		recv_check = recv_buf(packet, MAX_LEN + sizeof(Header), server->sk_num, server, &flag, &seq_num);
 		
 		//check for errors
 		if(recv_check == CRC_ERROR){
 			returnValue=FILENAME;
-			printf("ignoring CRC error\n");
-		}else if (flag==FNAME_BAD){
-			printf("File %s not found\n", fname);
-			returnValue = DONE;
-		}else if(isData(flag)){
-			printf("server send  data instead of filename. this may happen if the filename gets lost. will retry again\n");
-			returnValue=START_STATE;	//were getting data b4 anticipated. The server likely dropped its FNAME_OK. just role with it :)
+		}else if (recv_check!=1){
+			returnValue=FILENAME;	//ignore messages that dont have size one.
+		}else{
+			if(packet[0]==FNAME_OK){
+				returnValue=FILE_OK;
+			}else if(packet[0]==FNAME_BAD){
+				printf("Server reported File %s not found\n", fname);
+				returnValue=DONE;
+			}else{
+				returnValue=FILENAME;	//possibly erroneous message?
+			}
 		}
 	}
-	printf("informed that file ok\n");
 	return returnValue;
 }
 
@@ -169,7 +167,7 @@ STATE file_ok(int* outputFileFd, char* outputFileName){
 	STATE returnValue = DONE;
 
 	if((*outputFileFd = open(outputFileName, O_CREAT | O_TRUNC | O_WRONLY, 0600))<0){
-		perror("File open error: ");
+		printf("Error on open of output file: %s\n", outputFileName);
 		returnValue = DONE;
 	}else{
 		returnValue=RECV_DATA;
@@ -179,42 +177,30 @@ STATE file_ok(int* outputFileFd, char* outputFileName){
 
 STATE recv_data(int32_t output_file, Connection* server, uint32_t* clientSeqNum, slidingWindow* window){
 	uint32_t seq_num=0;
-	// uint32_t ackSeqNum=0;
 	uint8_t flag=0;
 	int32_t data_len=0;
 	uint8_t data_buf[MAX_LEN];
-	// uint8_t packet[MAX_LEN];
-	printf("entering recv state\n\n!\n");
 	if(pollCall(LONG_TIME * 1000) == -1){
 		printf("Timeout after 10 seconds, server must be gone.\n");
 		return DONE;
 	}
 	uint8_t messageStatus=moreMSGs;
-	while ( messageStatus==moreMSGs){	//while the 
-		messageStatus=windowRecvData(window, data_buf, &data_len, MAX_LEN, server->sk_num, server, &flag, &seq_num);
-		if(flag==END_OF_FILE){
-			printf("File done\n");
+	while ( messageStatus==moreMSGs){	//while their are more msgs to recieve:
+		messageStatus=windowRecvData(window, data_buf, &data_len, MAX_LEN + sizeof(Header), server->sk_num, server, &flag, &seq_num);
+		if(messageStatus==EOF_STATUS){
 			close(output_file);
 			return DONE;
-		} else if(data_len>0){
-			printf("writting to file\n");
+		}
+		if(data_len>0){
 			write(output_file, data_buf, data_len);	//somehow &data_buf worked earlier i think? try for now without
 		}
 	}
-		// if(flag==END_OF_FILE){
-		// 	printf("File done\n");
-		// 	close(output_file);
-		// 	return DONE;
-		// } else{ if(data_len>0)
-		// 	printf("writting to file\n");
-		// 	write(output_file, data_buf, data_len);	//somehow &data_buf worked earlier i think? try for now without
-		// }
 	return RECV_DATA;
 }
 
 void check_args(int argc, char** argv){
-	if(argc!=7){
-		printf("Usage %s fromFile toFile buffer_size error_rate hostname port\n", argv[0]);
+	if(argc!=8){
+		printf("Usage %s fromFile toFile window_size buffer_size error_rate hostname port\n", argv[0]);
 		exit(-1);
 	}
 
@@ -227,14 +213,18 @@ void check_args(int argc, char** argv){
 		printf("TO filename too long, needs to be less than 1000 and is: %ld\n", strlen(argv[2]));
 		exit(-1);
 	}
-
-	if(atoi(argv[3]) < 400 || atoi(argv[3]) > 1400){
-		printf("Buffer size needs to be between 400 and 1400 and is: %d\n", atoi(argv[3]));
+	if(atoi(argv[3])<1 || atoi(argv[3])>0x40000000){	//window size < 2^30
+		printf("Window size needs to be between 1 and 2^30 and is: %d\n", atoi(argv[3]));
 		exit(-1);
 	}
 
-	if(atof(argv[4]) < 0 || atof(argv[4]) >=1){
-		printf("Error rate needs to be between 0 and less than 1 and is: %f\n", atof(argv[4]));
+	if(atoi(argv[4]) < 400 || atoi(argv[4]) > 1400){
+		printf("Buffer size needs to be between 400 and 1400 and is: %d\n", atoi(argv[4]));
+		exit(-1);
+	}
+
+	if(atof(argv[5]) < 0 || atof(argv[5]) >=1){
+		printf("Error rate needs to be between 0 and less than 1 and is: %f\n", atof(argv[5]));
 		exit(-1);
 	}
 }

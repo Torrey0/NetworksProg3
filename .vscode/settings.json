@@ -5,6 +5,8 @@
         "polllib.h": "c",
         "safeutil.h": "c",
         "networks.h": "c",
-        "slidingwindow.h": "c"
+        "slidingwindow.h": "c",
+        "gethostbyname.h": "c",
+        "netdb.h": "c"
     }
 }

@@ -1,0 +1,11 @@
+#!/bin/bash
+ 
+mkdir lib
+cd lib
+tar xf ../libcpe464.tar
+make -f build464Lib.mk
+cp ./libcpe464.2.21.a ../libcpe464.2.21.a
+cp ./checksum.h ../checksum.h
+cp ./cpe464.h ../cpe464.h
+cd ..
+rm -rf lib

@@ -16,6 +16,7 @@ struct sWindow{
     uint8_t** windowBuffer;     //array of length windowSize. Containing buffers of size bufferSize
     int32_t* windowBufferSizes; //how may bytes of data each windowBuffer contains
     int windowSize;
+    uint8_t fileDone;  //flag tracks when the server has sent all messages
 };
 
 //initializes values, returns a window to be passed back to these Functions later
@@ -28,7 +29,7 @@ int windowOpen(slidingWindow* window);
 int windowRecieve(slidingWindow* window, uint8_t* buf, int32_t len, int32_t recv_sk_num, Connection* connection, uint8_t* flag, uint32_t* seq_num);
 
 //window wrapper for send_buf. user of API calls this to send data, which they should do so long as windowOpen returns true.
-int32_t window_send_data(slidingWindow* window, uint8_t* buf, uint32_t len, Connection* connection, uint8_t flag, uint32_t* seq_num, uint8_t* packet);
+int32_t window_send_data(slidingWindow* window, uint8_t* buf, uint32_t len, Connection* connection, uint8_t flag, uint32_t* seq_num, uint8_t* packet, uint8_t fileDone);
 
 //used to nudge the client in the event of timeout by sending lowest packet that has not been RR'ed
 void windowSendLowest(slidingWindow* window, Connection* connection, uint8_t* packet);

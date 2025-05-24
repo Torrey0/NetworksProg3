@@ -4,15 +4,19 @@
 #include "srej.h"
 #include "networks.h"
 #include "serverSlidingWindow.h"
-
+#include "safeUtil.h"
 
 //initializes static values, only one window per process with current impl, Much like pollLib
 slidingWindow* serverWindowInit(int windowSize, int bufferSize, int startingSeqNum){
     slidingWindow* window = malloc(sizeof(slidingWindow));                     //allocate window struct
-    window->windowBuffer=calloc(windowSize, sizeof(uint8_t*));   //allocate array of windows
-    window->windowBufferSizes=calloc(windowSize, sizeof(*window->windowBufferSizes));
+    if(window==NULL){
+        perror("malloc in window Init");
+        exit(-1);
+    }
+    window->windowBuffer=sCalloc(windowSize, sizeof(uint8_t*));   //allocate array of windows
+    window->windowBufferSizes=sCalloc(windowSize, sizeof(*window->windowBufferSizes));
     for(int i=0;i<windowSize;i++){
-        (window->windowBuffer)[i] = calloc(bufferSize, 1);       //allocate each window
+        (window->windowBuffer)[i] = sCalloc(bufferSize, 1);       //allocate each window
     }
 
     //will need to %windowSize whenever accessing window
@@ -26,9 +30,12 @@ slidingWindow* serverWindowInit(int windowSize, int bufferSize, int startingSeqN
 //sendRR for the current expectedSeqNum
 void windowSendLowest(slidingWindow* window, Connection* connection, uint8_t* sendingPacketBuffer){
     int32_t lowestIndex=window->lower % window->windowSize;
-
+    uint8_t flag=RESENT_TIMEOUT;
+    if(window->fileDone && (window->current==((window->lower)+1))){
+        flag=END_OF_FILE;
+    }
     //resend the missing packet
-    send_buf(window->windowBuffer[lowestIndex],window->windowBufferSizes[lowestIndex] ,connection, RESENT_TIMEOUT, window->lower, sendingPacketBuffer);
+    send_buf(window->windowBuffer[lowestIndex],window->windowBufferSizes[lowestIndex] ,connection, flag, window->lower, sendingPacketBuffer);
 }
 
 //returns false if current==upper, true otherwise
@@ -39,25 +46,29 @@ int windowOpen(slidingWindow* window){
 int receiveACK(slidingWindow* window, uint8_t* buf, int32_t len){
         //extract sequence number be RR'ed
         if(len!=sizeof(int32_t)){
-            printf("Error, recieved an ACK with length= %d != size of seq number\n", len);
+            // printf("Error, recieved an ACK with length= %d != size of seq number\n", len);
             return CRC_ERROR;
         }
         int32_t recv_seqNum=0;
         memcpy(&recv_seqNum, buf, sizeof(int32_t));
         recv_seqNum=ntohl(recv_seqNum);
+
         //compute change (how many packets have been confirmed)
         int change=recv_seqNum - window->lower;   //how many packets we can mark as recv
         if(change<0){
-            printf("Warning, recieved an old ACK for frame no longer in window! ignoring\n");
+            // printf("Warning, recieved an old ACK for frame no longer in window! ignoring\n");
             return CRC_ERROR;
         }
         
         //update Window lower and upper
         window->lower +=change;
         window->upper += change;
-    
+        if(window->fileDone && (window->current==window->lower)){   //check that the file is done, and window is empty
+            return EOF_ACK;
+        }
+
         if(window->lower>window->current){
-            printf("Error: lower>current. In windowRecieve\n");
+            // printf("Error: lower>current. In windowRecieve\n");
             exit(-1);
         }
     
@@ -70,7 +81,7 @@ int receiveSREJ(slidingWindow* window, uint8_t* buf, int32_t len, Connection* co
     
     //extract sequence number be SREJ'ed
     if(len!=sizeof(int32_t)){
-        printf("Error, recieved an SREJ with length= %d != size of seq number\n", len);
+        // printf("Error, recieved an SREJ with length= %d != size of seq number\n", len);
         return CRC_ERROR;
     }
     int32_t rejected_seqNum=0;
@@ -78,7 +89,7 @@ int receiveSREJ(slidingWindow* window, uint8_t* buf, int32_t len, Connection* co
     rejected_seqNum=ntohl(rejected_seqNum);
     //check if the obtained seqNum is in bounds
     if (rejected_seqNum < window->lower || rejected_seqNum >= window->current) {
-        printf("Error: Received SREJ for sequence number outside current window. Ignoring.\n");
+        // printf("Error: Received SREJ for sequence number outside current window. Ignoring.\n");
         return CRC_ERROR;
     }
 
@@ -96,29 +107,24 @@ int receiveSREJ(slidingWindow* window, uint8_t* buf, int32_t len, Connection* co
 int windowRecieve(slidingWindow* window, uint8_t* buf, int32_t len, int32_t sk_num, Connection* connection, uint8_t* flag, uint32_t* seq_num){
     int dataLen=recv_buf(buf, len, sk_num, connection, flag, seq_num);  //populates seq_num and flag
     if(dataLen == CRC_ERROR){   //ignore msgs with CRC errors
-        printf("CRC error\n");
         return CRC_ERROR;
     }
-    if(*flag==EOF_ACK){ //flag indicates we reached EOF
-        return 0;
-    }
     if(*flag== ACK ){
-        printf("recv ACK\n");
         return receiveACK(window, buf, dataLen);
     } else if(*flag == SREJ){
-        printf("recv SREJ\n");
         return receiveSREJ(window, buf, dataLen, connection, seq_num);
     }else{
-        printf("Error: windowRecieve unrecognized flag\n");
         return CRC_ERROR; //ignore non ACK or SREJ msgs.
     }
 }
 
 //window wrapper for send_buf. sends packet which is created from header + data in buf
-int32_t window_send_data(slidingWindow* window, uint8_t* buf, uint32_t len, Connection* connection, uint8_t flag, uint32_t* seq_num, uint8_t* packet){
-    
+int32_t window_send_data(slidingWindow* window, uint8_t* buf, uint32_t len, Connection* connection, uint8_t flag, uint32_t* seq_num, uint8_t* packet, uint8_t fileDone){
+    if(fileDone){
+        window->fileDone=fileDone;
+    }
     if(!windowOpen(window)){
-        printf("Warning Attempting to send on a full window! Ignoring Request\n");
+        // printf("Warning Attempting to send on a full window! Ignoring Request\n");
         return -1;
     }
     int windowIndex= window->current % window->windowSize;

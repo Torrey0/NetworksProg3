@@ -6,16 +6,16 @@
 
 
 CC= gcc
-CFLAGS= -g -Wall
+CFLAGS= -g -Wall -std=gnu99
 LIBS = 
 
-OBJS = networks.o gethostbyname.o srej.o pollLib.o safeUtil.o clientSlidingWindow.o serverSlidingWindow.o
+OBJS = networks.o srej.o pollLib.o safeUtil.o clientSlidingWindow.o serverSlidingWindow.o gethostbyname.o
 
 #uncomment next two lines if your using sendtoErr() library
 # LIBS += libcpe464.2.21.a -lstdc++ -ldl
-LIBS += libcpe464.a.b.a -lstdc++ -ldl
+LIBS += libcpe464.2.21.a -lstdc++ -ldl
 
-CFLAGS += -D__LIBCPE464_
+CFLAGS += -D__LIBCPE464__
 
 
 all: rcopyAll
@@ -36,7 +36,7 @@ myServer: myServer.c $(OBJS)
 	$(CC) $(CFLAGS) -o myServer myServer.c $(OBJS) $(LIBS)
 
 .c.o:
-	gcc -c $(CFLAGS) $< -o $@ $(LIBS)
+	gcc -c $(CFLAGS) $< -o $@
 
 cleano:
 	rm -f *.o

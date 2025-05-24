@@ -6,7 +6,7 @@
 
 #ifndef GETHOSTBYNAME_H
 #define GETHOSTBYNAME_H
-
+#include <netdb.h>
 
 unsigned char * gethostbyname6(const char * hostName, struct sockaddr_in6 * aSockaddr6);
 unsigned char * gethostbyname4(const char * hostName, struct sockaddr_in * aSockaddr);

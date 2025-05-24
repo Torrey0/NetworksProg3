@@ -19,6 +19,7 @@
 #include "srej.h"
 #include "pollLib.h"
 #include "serverSlidingWindow.h"
+#include "safeUtil.h"
 #include "cpe464.h"
 
 typedef enum State STATE;
@@ -35,7 +36,7 @@ STATE filename(Connection* client, slidingWindow** window, uint8_t* buf, int32_t
 STATE send_data(Connection* client, slidingWindow* window, uint8_t* packet, int32_t* packet_len, int32_t data_file, int32_t buf_size, uint32_t* seq_num, int8_t* fileDone);
 STATE timeout_on_ack(Connection* client, slidingWindow* window, uint8_t* packet);
 // STATE timeout_on_eof_ack(Connection* client, uint8_t* packet, int32_t packet_len);
-STATE wait_on_ack(Connection* client, slidingWindow* window, int8_t fileDone);
+STATE wait_on_ack(Connection* client, slidingWindow* window, int8_t fileDone, uint32_t serverSeqNum);
 // STATE wait_on_eof_ack(Connection* client);
 int processArgs(int argc, char** argv);
 void handleZombies(int sig);
@@ -59,14 +60,13 @@ void process_server(int serverSocketNumber){
 	uint8_t flag=0;
 	uint32_t seq_num=0;
 	int32_t recv_len=0;
-	Connection* client=(Connection*) calloc(1, sizeof(Connection));
+	Connection* client=(Connection*) sCalloc(1, sizeof(Connection));
 
 
 	signal(SIGCHLD, handleZombies);
 
 	while(1){
 		//block waiting for a new client
-		printf("waiting for new client\n");
 		recv_len = recv_buf(buf, MAX_LEN, serverSocketNumber, client, &flag, &seq_num);
 		//TODO: make recv_buf initialize the window??
 
@@ -78,10 +78,8 @@ void process_server(int serverSocketNumber){
 
 			if(pid==0){
 				//child process handles the client
-				printf("Child fork() - child pid: %d\n", getpid());
 
 				process_client(serverSocketNumber, buf, recv_len, client);
-				printf("done processing Client!\n");
 				exit(0);
 			}
 		}
@@ -112,22 +110,14 @@ void process_client(int32_t serverSocketNumber, uint8_t* buf, int32_t recv_len, 
 				state=send_data(client, window, packet, &packet_len, data_file, buf_size, &seq_num, &fileDone);
 				break;
 			case WAIT_ON_ACK:
-				state=wait_on_ack(client, window, fileDone);
+				state=wait_on_ack(client, window, fileDone, seq_num);
 				break;
 			case TIMEOUT_ON_ACK:
 				state=timeout_on_ack(client, window, packet);
 				break;
-			// case WAIT_ON_EOF_ACK:
-			// 	printf("\n\n\nat EOF STate\n\n\n");
-			// 	state=wait_on_eof_ack(client);
-			// 	break;
-			// case TIMEOUT_ON_EOF_ACK:
-			// 	state=timeout_on_eof_ack(client, packet, packet_len);
-				// break;
 			case DONE:
 				break;
 			default:
-				printf("In default, there is an error somehow!\n");
 				state=DONE;
 				break;
 		}
@@ -146,9 +136,6 @@ STATE filename(Connection* client, slidingWindow** window, uint8_t* buf, int32_t
 	windowSize = ntohl(windowSize);
 	memcpy(fname, &buf[sizeof(*buf_size)+sizeof(windowSize)], recv_len - SIZE_OF_BUF_SIZE-sizeof(int32_t));	//extract name
 
-	// fname[recv_len - SIZE_OF_BUF_SIZE-sizeof(int32_t)-1]='\0';
-	// printf("buf size: %d, window Size: %d, fname: %s\n", *buf_size, windowSize, fname);
-	// while(1);
 	//initialize window:
 	*window = serverWindowInit(windowSize, *buf_size, seq_num);
 
@@ -160,12 +147,11 @@ STATE filename(Connection* client, slidingWindow** window, uint8_t* buf, int32_t
 	if(((*data_file) = open(fname, O_RDONLY)) < 0){
 		response[0]= FNAME_BAD;
 		send_buf(response, 1, client, FNAME_RESP, 0, buf);
-		printf("bad file name\n");
+		printf("Error file %s not found\n", fname);
 		returnValue=DONE;
 	}else{
 		response[0]= FNAME_OK;
 		send_buf(response, 1, client, FNAME_RESP, 0, buf);
-		printf("sent response to client\n");
 		returnValue=SEND_DATA;
 	}
 
@@ -181,7 +167,7 @@ STATE send_data(Connection* client, slidingWindow* window, uint8_t* packet, int3
 	while(windowOpen(window)){
 		len_read=read(data_file, buf, buf_size);
 		if(len_read==0){	//if we reach EOF
-			window_send_data(window, buf, 0, client, END_OF_FILE, seq_num, packet);
+			window_send_data(window, buf, 0, client, END_OF_FILE, seq_num, packet, 1);
 			*fileDone=1;	//tell wait_on_ack to never return here, no need.
 			returnValue=WAIT_ON_ACK;
 			break;
@@ -189,7 +175,7 @@ STATE send_data(Connection* client, slidingWindow* window, uint8_t* packet, int3
 			perror("send_data, read error");
 			returnValue=DONE;
 		}else{
-			window_send_data(window, buf, len_read, client, DATA, seq_num, packet);
+			window_send_data(window, buf, len_read, client, DATA, seq_num, packet, 0);
 			returnValue=WAIT_ON_ACK;
 		}
 	}
@@ -197,7 +183,7 @@ STATE send_data(Connection* client, slidingWindow* window, uint8_t* packet, int3
 	return returnValue;
 }
 
-STATE wait_on_ack(Connection* client, slidingWindow* window, int8_t fileDone){
+STATE wait_on_ack(Connection* client, slidingWindow* window, int8_t fileDone, uint32_t serverSeqNum){
 	STATE returnValue=DONE;
 	uint32_t crc_check=0;
 	uint8_t buf[MAX_LEN];
@@ -215,16 +201,15 @@ STATE wait_on_ack(Connection* client, slidingWindow* window, int8_t fileDone){
 			if(crc_check == CRC_ERROR){
 				returnValue = WAIT_ON_ACK;
 				retryCount--;	//dont count CRC Errors as re-attempts
-			} else if (flag==EOF_ACK){
-				printf("EOF Ack'ed\n");
+			} else if (crc_check==EOF_ACK){
+				return DONE;
+			} else if(fileDone && serverSeqNum==seq_num){	//file is Done, and the client has RR'ed all our messages
 				returnValue=DONE;	//we are done with the client
 
 			} else if(flag!=ACK && flag!=SREJ){
-				printf("in wait_on_ack, but didn't recv ACK flag. Should never happen!\n");
 				returnValue=DONE;
 			}
 		}else{
-			printf("returnValue: %d\n", returnValue);
 			return returnValue;
 		}
 	}

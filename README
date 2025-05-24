@@ -1,0 +1,17 @@
+Torrey Zaches Lab section 6pm. Program 3 RCopy Submission
+
+Submitted before Sunday, 5-25, so eligible for extra credit! :)
+
+Since it was not specified how we should distinguish between an FNAME_OK and FNAME_BAD, I am using the flag for
+file response=9, and am indicating if the file name is ok or not with a one byte payload, where OK=9, bad=10.
+
+I use Prof. Smith's Poll API for both programs. Client program (rcopy) uses clientSlidingWindow.h/c for its windowing
+API, and server program uses the serverSlidingWindow.h/c for its windowing API.
+
+Per the instructions. Rcopy sends the last packet to the server, so if this packet is lost the server will go to a
+timeout trying to retransmit whatever packet it needed the RR for 10 times before quiting.
+
+The client will restart its sequence number when it tries to re-initiate the filename request after not getting a  response,
+the the SeqNo report for client isn't always 1-1. (the total will be the number fails recieving FNAME_OK larger than the
+unique) I think this makes sense, and I dont see anywhere that specifies if we need to program specifically to make it 1-1.
+The server of couse, will only have a SeqNo report be 1-1 if there are no errors, and no out of order messages.

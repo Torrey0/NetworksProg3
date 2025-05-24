@@ -101,23 +101,12 @@ int processSelect(Connection* client, int* retryCount, int selectTimeoutState, i
         int pollRet=pollCall(SHORT_TIME*1000);
         if(pollRet==-1){    //timeout
             returnValue = selectTimeoutState;
-            printf("claimed Timout\n");
         }else if (pollRet==client->sk_num){
-            //no data ready
             returnValue=dataReadyState;
             *retryCount=0;
-            printf("claimed Mathch");
         } else{
-            printf("poll Library issue,  recv msg on fd that shouldnt exist\n");
             returnValue=selectTimeoutState;
         }
-        // if(select_call(client->sk_num, SHORT_TIME)==1){
-        //     *retryCount=0;
-        //     returnValue = dataReadyState;
-        // }else{
-        //     //no data ready
-        //     returnValue=selectTimeoutState;
-        // }
     }
     
     return returnValue;

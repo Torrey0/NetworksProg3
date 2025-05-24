@@ -76,7 +76,6 @@ int pollCall(int timeInMilliSeconds)
 		perror("pollCall");
 		exit(-1);
 	}	
-	printf("pollRet: %d\n", pollValue);
 	// check to see if timeout occurred (poll returned 0)
 	if (pollValue > 0)
 	{
@@ -95,7 +94,6 @@ int pollCall(int timeInMilliSeconds)
 		}
 
 	}
-	printf("matching socket: %d\n", returnValue);
 	
 	// Ready socket # or -1 if timeout/none
 	return returnValue;

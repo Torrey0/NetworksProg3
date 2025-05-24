@@ -7,7 +7,8 @@
 
 typedef enum {
     noMSGs = 0,
-    moreMSGs = 1
+    moreMSGs = 1,
+    EOF_STATUS =2
 } MsgStatus;
 
 typedef struct windowMessage windowMSG;
@@ -24,7 +25,6 @@ struct sWindow{
     // uint64_t highestIndex;
     windowMSG* msgBuffers;
     int windowSize; //windowSize=length of the msgBuffer
-
     uint32_t clientSeqNum;  //incremented every time the client sends a msg. tbh not really used for anything
 };
 
@@ -33,6 +33,7 @@ struct windowMessage{
     int32_t windowBufferSize; //how may bytes of data each windowBuffer contains
     uint32_t seq_num;   //when we recieve an old sequence number, use this to find it
     int8_t valid;
+    uint8_t flag;
 };
 
 //initializes values, returns a window to be passed back to these Functions later
