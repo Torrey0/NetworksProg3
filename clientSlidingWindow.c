@@ -89,6 +89,25 @@ int checkInOrderMsgs(slidingWindow* window, uint8_t* buf, int32_t* dataLength, u
         return -1;
 }
 
+int directReturn(slidingWindow* window, Connection* connection, uint8_t* flag, uint32_t* seq_num){
+    int iterIndex=(*seq_num)+1;
+    (window->expectedSeqNum)++;   //increment seqNum for msgs we are returning
+    (window->highestUnReadSeqNum)++;
+    // Iterate over msgs to send appropraite RR, we still only return the first one here. if we go over multiple msgs here, the skipped msgs will be returned when calling checkInOrderMsgs
+    while ((window->msgBuffers[iterIndex % window->windowSize]).valid) {             
+        iterIndex++;            // Advance the window
+        (window->expectedSeqNum)++;   //increment seqNum for msgs we are buffering
+    }
+    sendRR(window, connection);             //send RR up until currently expected msg.
+    if(uint_ltMod(window->highestSeqRecv, *seq_num)){   //update our highest recvSeqNum
+        window->highestSeqRecv=*seq_num;
+    }
+    if(*flag==END_OF_FILE){
+        return EOF_STATUS;
+    }
+    return messageReady(window);
+}
+
 //expects that a message is already on the window, and that client will keep calling as long as this returns 1. it is up to the client code to ensure this using poll.
 //used by client. return 0 for no more messages. return 1 for more messages, keep reading (these will be messages that have been buffered by server)
 //populates buf and dataLenth with the messagewith value if returnValue>0. buf only needs to be data Size
@@ -126,22 +145,6 @@ int windowRecvData(slidingWindow* window, uint8_t* buf, int32_t* dataLength, int
         *dataLength=CRC_ERROR;
         return messageReady(window);
     }
-
     //otherwise, the msg seems legit and is in order :). Can return directly to client
-    int iterIndex=(*seq_num)+1;
-    (window->expectedSeqNum)++;   //increment seqNum for msgs we are returning
-    (window->highestUnReadSeqNum)++;
-    // Iterate over msgs to send appropraite RR, we still only return the first one here. if we go over multiple msgs here, the skipped msgs will be returned when calling checkInOrderMsgs
-    while ((window->msgBuffers[iterIndex % window->windowSize]).valid) {             
-        iterIndex++;            // Advance the window
-        (window->expectedSeqNum)++;   //increment seqNum for msgs we are buffering
-    }
-    sendRR(window, connection);             //send RR up until currently expected msg.
-    if(uint_ltMod(window->highestSeqRecv, *seq_num)){   //update our highest recvSeqNum
-        window->highestSeqRecv=*seq_num;
-    }
-    if(*flag==END_OF_FILE){
-        return EOF_STATUS;
-    }
-    return messageReady(window);
+    return directReturn(window, connection, flag, seq_num);
 } 
